@@ -6,7 +6,9 @@ import (
 	"io"
 	"os"
 	"path/filepath"
+	"strconv"
 	"strings"
+	"sync"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
@@ -278,4 +280,81 @@ func TestCompression(t *testing.T) {
 	assert.Equal(t, (lineSize+1)*(rotationSize/lineSize), len(decompressedData), "expected %d bytes, got %d", lineSize*(rotationSize/lineSize), len(decompressedData))
 	lines := bytes.Split(decompressedData, []byte("\n"))
 	assert.Equal(t, rotationSize/lineSize, len(lines)-1, "expected %d lines, got %d", rotationSize/lineSize, len(lines)-1)
+}
+
+func TestConcurrentWritesAndRotation(t *testing.T) {
+	// Parent mode: spawn N child processes
+	dir := t.TempDir()
+	logPath := filepath.Join(dir, "app.log")
+
+	const (
+		writers        = 10
+		linesPerWriter = 300
+		lineSize       = 10
+		rotationSize   = 5000
+	)
+
+	var wg sync.WaitGroup
+	for i := range writers {
+		wg.Add(1)
+		go func(id int) {
+			defer wg.Done()
+			prefix := strconv.Itoa(id)
+			logger, err := New(
+				logPath,
+				WithMaxBytes(rotationSize),
+				WithMaxBackups(10000),
+				WithPrefix([]byte(prefix)),
+				WithFileLocking(),
+			)
+			assert.NoError(t, err)
+			defer logger.Close()
+
+			msg := []byte(strings.Repeat("x", lineSize-len(prefix)-1) + "\n")
+			for range linesPerWriter {
+				_, err := logger.Write(msg)
+				assert.NoError(t, err)
+			}
+			err = logger.Sync()
+			assert.NoError(t, err)
+		}(i)
+	}
+
+	wg.Wait()
+
+	// now validate total lines
+	files, _ := filepath.Glob(logPath + "*")
+	total := 0
+	for _, f := range files {
+		data, err := os.ReadFile(f)
+		if err != nil {
+			t.Fatalf("read %s: %v", f, err)
+		}
+		total += len(bytes.Split(data, []byte("\n"))) - 1
+	}
+	want := writers * linesPerWriter
+	assert.Equal(t, want, total, "expected %d lines in all files, got %d", want, total)
+}
+
+func BenchmarkLoggerWrite(b *testing.B) {
+	tmpDir := b.TempDir()
+	logPath := filepath.Join(tmpDir, "benchmark.log")
+	logger, err := New(logPath,
+		WithFileLocking(),
+		WithMaxBytes(100*1024*1024), // 100MB
+	)
+	if err != nil {
+		b.Fatalf("failed to create logger: %v", err)
+	}
+	defer logger.Close()
+
+	message := []byte("Lorem ipsum dolor sit amet, consetetur sadipscing elitr, sed diam nonumy eirmod tempor invidunt ut labore et dolore magna aliquyam erat, sed diam voluptua. At vero eos et accusam et justo duo dolores et ea rebum. Stet clita kasd gubergren, no sea takimata sanctus est Lorem ipsum dolor sit amet. Lorem ipsum dolor sit amet, consetetur sadipscing elitr, sed diam nonumy eirmod tempor invidunt ut labore et dolore magna aliquyam erat, sed diam voluptua. At vero eos et accusam et justo duo dolores et ea rebum. Stet clita kasd gubergren, no sea takimata sanctus est Lorem ipsum dolor sit amet.\n")
+
+	b.ResetTimer()
+	for i := 0; i < b.N; i++ {
+		_, err := logger.Write(message)
+		if err != nil {
+			b.Fatalf("failed to write log: %v", err)
+		}
+	}
 }

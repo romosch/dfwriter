@@ -91,8 +91,8 @@ func (w *DistributedFileWriter) writeLine(line []byte) (err error) {
 	// of the write is less than or equal to the system’s PIPE_BUF size
 	if w.fsLock {
 		if n > PIPE_BUF || shouldRotate {
-			if err := w.lockFileWrite(); err != nil {
-				return fmt.Errorf("failed to acquire lock on %s: %w", w.file.Name(), err)
+			if err := syscall.Flock(int(w.file.Fd()), syscall.LOCK_EX); err != nil {
+				return fmt.Errorf("failed to acquire exclusive lock on %s: %w", w.file.Name(), err)
 			}
 			// Check again if we need to rotate after acquiring the write-lock
 			shouldRotate, err = w.shouldRotate(n)
@@ -100,8 +100,8 @@ func (w *DistributedFileWriter) writeLine(line []byte) (err error) {
 				return err
 			}
 		} else {
-			if err := w.lockFileRead(); err != nil {
-				return fmt.Errorf("failed to acquire lock on %s: %w", w.file.Name(), err)
+			if err := syscall.Flock(int(w.file.Fd()), syscall.LOCK_SH); err != nil {
+				return fmt.Errorf("failed to acquire shared lock on %s: %w", w.file.Name(), err)
 			}
 		}
 		defer func() {
@@ -118,7 +118,7 @@ func (w *DistributedFileWriter) writeLine(line []byte) (err error) {
 				}
 			}
 			// Unlock the file after writing
-			unlockErr := w.unlockFile()
+			unlockErr := syscall.Flock(int(w.file.Fd()), syscall.LOCK_UN)
 			if unlockErr != nil {
 				unlockErr = fmt.Errorf("failed to unlock %s: %w", w.file.Name(), unlockErr)
 				if err != nil {
@@ -258,38 +258,6 @@ func (w *DistributedFileWriter) Sync() error {
 
 func (w *DistributedFileWriter) Name() string {
 	return w.file.Name()
-}
-
-func (w *DistributedFileWriter) lockFileWrite() error {
-	flock := syscall.Flock_t{
-		Type:   syscall.F_WRLCK, // Write lock (exclusive)
-		Whence: 0,               // From start of the file
-		Start:  0,
-		Len:    0, // Lock the entire file
-	}
-	return syscall.FcntlFlock(w.file.Fd(), syscall.F_SETLKW, &flock)
-}
-
-// Acquire a read lock (shared lock)
-func (w *DistributedFileWriter) lockFileRead() error {
-	flock := syscall.Flock_t{
-		Type:   syscall.F_RDLCK, // Read lock (shared)
-		Whence: 0,
-		Start:  0,
-		Len:    0,
-	}
-	return syscall.FcntlFlock(w.file.Fd(), syscall.F_SETLKW, &flock)
-}
-
-// Unlock the file
-func (w *DistributedFileWriter) unlockFile() error {
-	flock := syscall.Flock_t{
-		Type:   syscall.F_UNLCK, // Unlock
-		Whence: 0,
-		Start:  0,
-		Len:    0,
-	}
-	return syscall.FcntlFlock(w.file.Fd(), syscall.F_SETLK, &flock)
 }
 
 func (w *DistributedFileWriter) shouldRotate(n int) (bool, error) {

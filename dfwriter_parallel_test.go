@@ -21,7 +21,7 @@ import (
 // The test uses a helper binary to perform the actual writing, which is built from a separate Go source file.
 // This is to simulate processes on different machines writing to the same log file using fcntl locking.
 
-func TestConcurrentWritesAndRotation(t *testing.T) {
+func TestConcurrentWritesAndRotationMultiProc(t *testing.T) {
 	// build helper binary into temp dir
 	out := filepath.Join(t.TempDir(), "logwriter")
 	cmd := exec.Command("go", "build", "-o", out, "./cmd/test/main.go")

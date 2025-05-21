@@ -38,35 +38,35 @@ func New(fileName string, options ...Option) (*DistributedFileWriter, error) {
 }
 
 // WithMaxBytes returns an option to set the maximum size in bytes before rotation.
-func WithMaxBytes(maxBytes int64) func(*DistributedFileWriter) {
+func WithMaxBytes(maxBytes int64) Option {
 	return func(w *DistributedFileWriter) {
 		w.maxSize = maxBytes
 	}
 }
 
 // WithMaxBackups returns an option to set the maximum number of backup files to retain.
-func WithMaxBackups(maxBackups int) func(*DistributedFileWriter) {
+func WithMaxBackups(maxBackups int) Option {
 	return func(w *DistributedFileWriter) {
 		w.maxBackups = maxBackups
 	}
 }
 
 // WithPrefix returns an option to prepend the given byte prefix to each log entry.
-func WithPrefix(prefix []byte) func(*DistributedFileWriter) {
+func WithPrefix(prefix []byte) Option {
 	return func(w *DistributedFileWriter) {
 		w.prefix = prefix
 	}
 }
 
 // WithFileLocking returns an option to enable fcntl file-locking during writes.
-func WithFileLocking() func(*DistributedFileWriter) {
+func WithFileLocking() Option {
 	return func(w *DistributedFileWriter) {
 		w.fsLock = true
 	}
 }
 
 // WithCompression returns an option to enable gzip compression for the log file.
-func WithCompression() func(*DistributedFileWriter) {
+func WithCompression() Option {
 	return func(w *DistributedFileWriter) {
 		w.compress = true
 	}
