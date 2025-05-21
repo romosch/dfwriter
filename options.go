@@ -25,9 +25,7 @@ func New(fileName string, options ...Option) (*DistributedFileWriter, error) {
 	}
 
 	logger := &DistributedFileWriter{
-		file:       file,
-		maxSize:    10 * 1024 * 1024, // default 10MB
-		maxBackups: 5,
+		file: file,
 	}
 
 	for _, o := range options {
@@ -58,14 +56,14 @@ func WithPrefix(prefix []byte) Option {
 	}
 }
 
-// WithFileLocking returns an option to enable fcntl file-locking during writes.
+// WithFileLocking returns an option to enable filesystem file-locking during writes.
 func WithFileLocking() Option {
 	return func(w *DistributedFileWriter) {
 		w.fsLock = true
 	}
 }
 
-// WithCompression returns an option to enable gzip compression for the log file.
+// WithCompression returns an option to enable gzip compression for generated backup log files.
 func WithCompression() Option {
 	return func(w *DistributedFileWriter) {
 		w.compress = true

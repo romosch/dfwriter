@@ -1,6 +1,6 @@
 # dfwriter
 
- is a Go package providing a distributed file-based log writer. It relies on file-locking and POSIX atomic file-descriptor writes guarantees to
+ is a Go package providing a distributed file-based log writer. It relies on file-locking and POSIX atomic file-descriptor writes to
  log to a single file from multiple processes without interleaving, and thread-safe rotation.
 
 ## Features
@@ -9,7 +9,6 @@
 - Configurable number of backup log files to retain
 - Optional prefix for each log line
 - Optional file-level locking for safe concurrent writes and rotation
-- Flush support to write buffered data before exit
 
 ## Installation
 
@@ -64,12 +63,12 @@ Creates a new `DistributedFileWriter` that writes to the specified `fileName`.  
 - `WithMaxBytes(maxBytes int64)`: set maximum file size (in bytes) before rotation
 - `WithMaxBackups(maxBackups int)`: set the maximum number of rotated backup files
 - `WithPrefix(prefix []byte)`: prepend a byte slice prefix to each log entry
-- `WithFileLocking()`: enable exclusive file locking during writes and rotation
+- `WithFileLocking()`: enable exclusive file locking during rotation and writing of lines exceding 4096 bytes
 
 ### DistributedFileWriter Methods
 
-- `Write(b []byte) (int, error)`: buffer input until newline and then write each complete line with rotation and locking
-- `Flush() error`: write any remaining buffered data as a log entry
+- `Write(b []byte) (int, error)`: buffer input until newline and then write each complete line with  optional rotation and locking
+- `Sync() error`: write any remaining buffered data as a log entry
 - `Close() error`: close the underlying log file
 
 ## Contributing

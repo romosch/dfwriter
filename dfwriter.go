@@ -23,7 +23,10 @@ type DistributedFileWriter struct {
 	buf        bytes.Buffer
 }
 
-// Write buffers input until newline and writes each complete line with rotation and file-locking.
+// Write buffers the given bytes and writes them to the log file when a newline is encountered.
+// If the prefix is set, it prepends the prefix to each line before writing.
+// If the line exceeds the max size, it rotates the log file.
+// Returns the number of bytes buffered and any error encountered.
 func (w *DistributedFileWriter) Write(b []byte) (int, error) {
 	for i := range b {
 		w.buf.WriteByte(b[i])
@@ -38,39 +41,6 @@ func (w *DistributedFileWriter) Write(b []byte) (int, error) {
 	return len(b), nil
 }
 
-// writeLine handles writing a single log line with optional prefix, rotation, and file locking.
-// writeLine writes a single line to the log file managed by the SafeRotatingLogger.
-// It ensures that the line adheres to the maximum size constraints and handles
-// file rotation if necessary. The function also manages file locking to ensure
-// atomic writes and prevent data corruption in concurrent environments.
-//
-// Parameters:
-//   - line: A byte slice representing the line to be written. If the line is empty,
-//     the function returns immediately without performing any operations.
-//
-// Returns:
-//   - err: An error if the operation fails. Possible error scenarios include:
-//   - The line exceeds the maximum allowed size.
-//   - Failure to acquire file locks.
-//   - Failure to rotate the log file.
-//   - Failure to write to the file or sync the data.
-//
-// Behavior:
-//   - If the line length (including the prefix) exceeds the maximum size (maxSize),
-//     the function returns an error.
-//   - The function checks if the log file needs to be rotated based on the current
-//     file size and the size of the new line. If rotation is required, it performs
-//     the rotation before writing the line.
-//   - File locking is used to ensure atomic writes. If the line size exceeds the
-//     system's PIPE_BUF size or rotation is required, an exclusive lock is acquired.
-//     Otherwise, a shared lock is used.
-//   - After writing the line, the function ensures the file is synced to disk and
-//     releases the lock.
-//
-// Notes:
-//   - On Unix-like systems, writes to a file descriptor are atomic if the size of
-//     the write is less than or equal to the system's PIPE_BUF size.
-//   - The function appends the logger's prefix to the line before writing it to the file.
 func (w *DistributedFileWriter) writeLine(line []byte) (err error) {
 	if len(line) == 0 {
 		return nil
@@ -247,6 +217,7 @@ func (w *DistributedFileWriter) Close() error {
 }
 
 // Sync writes any remaining buffered data as a complete log entry.
+// If a prefix is set, it prepends the prefix to the log entry.
 func (w *DistributedFileWriter) Sync() error {
 	if w.buf.Len() != 0 {
 		// Write the remaining buffer content with the prefix
@@ -256,6 +227,7 @@ func (w *DistributedFileWriter) Sync() error {
 	return w.file.Sync()
 }
 
+// Name returns the name of the log file.
 func (w *DistributedFileWriter) Name() string {
 	return w.file.Name()
 }
