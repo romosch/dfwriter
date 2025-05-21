@@ -55,9 +55,9 @@ func main() {
 
 ## API Reference
 
-### New(fileName string, options ...func(*SafeRotatingwriter)) (*SafeRotatingwriter, error)
+### New(fileName string, options ...Option) (*DistributedFileWriter, error)
 
-Creates a new `SafeRotatingwriter` that writes to the specified `fileName`.  It opens or creates the file and applies any provided functional options.
+Creates a new `DistributedFileWriter` that writes to the specified `fileName`.  It opens or creates the file and applies any provided functional options.
 
 ### Options
 
@@ -66,7 +66,7 @@ Creates a new `SafeRotatingwriter` that writes to the specified `fileName`.  It 
 - `WithPrefix(prefix []byte)`: prepend a byte slice prefix to each log entry
 - `WithFileLocking()`: enable exclusive file locking during writes and rotation
 
-### SafeRotatingwriter Methods
+### DistributedFileWriter Methods
 
 - `Write(b []byte) (int, error)`: buffer input until newline and then write each complete line with rotation and locking
 - `Flush() error`: write any remaining buffered data as a log entry
