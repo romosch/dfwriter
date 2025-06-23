@@ -26,7 +26,8 @@ func New(fileName string, options ...Option) (*DistributedFileWriter, error) {
 	}
 
 	logger := &DistributedFileWriter{
-		file: file,
+		file:           file,
+		atomicLineSize: 4096, // Default atomic line size for most unix systems
 	}
 
 	for _, o := range options {
@@ -75,5 +76,13 @@ func WithFileLocking() Option {
 func WithCompression() Option {
 	return func(w *DistributedFileWriter) {
 		w.compress = true
+	}
+}
+
+// WithAtomicLineSize returns an option to set the size in bytes assumed to be atomic for writes to a file.
+// If a line exceeds this size, an exclusive lock is acquired for writing it to ensure atomicity.
+func WithAtomicLineSize(size int) Option {
+	return func(w *DistributedFileWriter) {
+		w.atomicLineSize = size
 	}
 }
