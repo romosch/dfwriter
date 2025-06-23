@@ -3,6 +3,7 @@ package dfwriter
 import (
 	"fmt"
 	"os"
+	"time"
 )
 
 type Option func(*DistributedFileWriter)
@@ -53,6 +54,13 @@ func WithMaxBackups(maxBackups int) Option {
 func WithPrefix(prefix []byte) Option {
 	return func(w *DistributedFileWriter) {
 		w.prefix = prefix
+	}
+}
+
+// WithPrefix returns an option to prepend the given byte prefix to each log entry.
+func WithMaxAge(age time.Duration) Option {
+	return func(w *DistributedFileWriter) {
+		w.maxAge = age
 	}
 }
 

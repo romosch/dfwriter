@@ -7,6 +7,7 @@ import (
 	"io"
 	"os"
 	"path/filepath"
+	"regexp"
 	"sort"
 	"strings"
 	"syscall"
@@ -14,24 +15,25 @@ import (
 )
 
 type DistributedFileWriter struct {
-	fsLock     bool
-	compress   bool
-	maxBackups int
-	maxSize    int64
-	file       *os.File
-	prefix     []byte
-	buf        bytes.Buffer
+	fsLock         bool
+	compress       bool
+	maxBackups     int
+	maxSize        int64
+	atomicLineSize int
+	file           *os.File
+	maxAge         time.Duration
+	prefix         []byte
+	buf            bytes.Buffer
 }
 
-// Write buffers the given bytes and writes them to the log file when a newline is encountered.
-// If the prefix is set, it prepends the prefix to each line before writing.
-// If the line exceeds the max size, it rotates the log file.
+// Write buffers the given bytes. If a newline is encountered, the buffer
+// contents are written to the file via the WriteLine method.
 // Returns the number of bytes buffered and any error encountered.
 func (w *DistributedFileWriter) Write(b []byte) (int, error) {
 	for i := range b {
 		w.buf.WriteByte(b[i])
 		if b[i] == '\n' {
-			err := w.writeLine(w.buf.Bytes())
+			err := w.WriteLine(w.buf.Bytes())
 			if err != nil {
 				return 0, err
 			}
@@ -41,7 +43,10 @@ func (w *DistributedFileWriter) Write(b []byte) (int, error) {
 	return len(b), nil
 }
 
-func (w *DistributedFileWriter) writeLine(line []byte) (err error) {
+// WriteLine writes the given bytes to the file, prepending the prefix if set.
+// It handles rotation if the line exceeds the max size and manages file locking
+// to ensure atomic writes. Returns any error encountered.
+func (w *DistributedFileWriter) WriteLine(line []byte) (err error) {
 	if len(line) == 0 {
 		return nil
 	}
@@ -60,7 +65,7 @@ func (w *DistributedFileWriter) writeLine(line []byte) (err error) {
 	// On Unix-like systems, writes to a file descriptor are atomic if the size
 	// of the write is less than or equal to the system’s PIPE_BUF size
 	if w.fsLock {
-		if n > PIPE_BUF || shouldRotate {
+		if n > w.atomicLineSize || shouldRotate {
 			if err := syscall.Flock(int(w.file.Fd()), syscall.LOCK_EX); err != nil {
 				return fmt.Errorf("failed to acquire exclusive lock on %s: %w", w.file.Name(), err)
 			}
@@ -75,7 +80,7 @@ func (w *DistributedFileWriter) writeLine(line []byte) (err error) {
 			}
 		}
 		defer func() {
-			if n > PIPE_BUF || shouldRotate {
+			if n > w.atomicLineSize || shouldRotate {
 				// Sync the file to ensure all data is written before unlocking
 				syncErr := w.file.Sync()
 				if syncErr != nil {
@@ -198,30 +203,63 @@ func (w *DistributedFileWriter) cleanupOldBackups() error {
 		}
 	}
 
-	if len(backups) <= w.maxBackups {
-		return nil
-	}
-
 	sort.Strings(backups)
-	toDelete := backups[:len(backups)-w.maxBackups]
-	for _, file := range toDelete {
-		_ = os.Remove(file) // best-effort
+	for i, file := range backups {
+		expired, err := w.isOlderThanFilename(file)
+		if err != nil {
+			return err
+		}
+		if (len(backups)-i > w.maxBackups && w.maxBackups > 0) || expired {
+			err = os.Remove(file)
+			if err != nil {
+				return err
+			}
+		}
 	}
 
 	return nil
 }
 
-// Close closes the underlying log file.
+// isOlderThanFilename returns true if the embedded timestamp in fname
+// (in the form ".log.YYYYMMDD-HHMMSS.") is before cutoff.
+func (w *DistributedFileWriter) isOlderThanFilename(fname string) (bool, error) {
+	if w.maxAge <= 0 {
+		return false, nil
+	}
+	re := regexp.MustCompile(`\.log\.(\d{8}-\d{6})\.`)
+	matches := re.FindStringSubmatch(fname)
+	if len(matches) < 2 {
+		return false, fmt.Errorf("no timestamp found in %q", fname)
+	}
+
+	ts, err := time.Parse("20060102-150405", matches[1])
+	if err != nil {
+		return false, fmt.Errorf("cannot parse timestamp %q: %w", matches[1], err)
+	}
+	cutoff := time.Now().Add(-w.maxAge)
+
+	return ts.Before(cutoff), nil
+}
+
+// Close calls the Sync function and then closes the underlying log file.
 func (w *DistributedFileWriter) Close() error {
-	return w.file.Close()
+	syncErr := w.Sync()
+	closeErr := w.file.Close()
+	if syncErr != nil && closeErr != nil {
+		return fmt.Errorf("failed to sync and close file: %w; %w", syncErr, closeErr)
+	} else if syncErr != nil {
+		return fmt.Errorf("failed to sync file: %w", syncErr)
+	} else if closeErr != nil {
+		return fmt.Errorf("failed to close file: %w", closeErr)
+	}
+	return nil
 }
 
 // Sync writes any remaining buffered data as a complete log entry.
-// If a prefix is set, it prepends the prefix to the log entry.
 func (w *DistributedFileWriter) Sync() error {
 	if w.buf.Len() != 0 {
 		// Write the remaining buffer content with the prefix
-		return w.writeLine(w.buf.Bytes())
+		return w.WriteLine(w.buf.Bytes())
 	}
 
 	return w.file.Sync()
